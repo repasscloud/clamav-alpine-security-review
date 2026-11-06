@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Prepare report directory
         run: mkdir -p "$REPORT_DIR"
@@ -211,7 +211,7 @@ jobs:
 
       - name: Upload reports and optional image archive
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clamav-alpine-amd64-review-${{ github.run_number }}
           path: reports/
