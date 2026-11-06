@@ -1,0 +1,6 @@
+alpine_requested=3.24.4
+alpine_resolved=alpine@sha256:93b41ef40b1677fce8fcc64ff4af09daddfacf5040afde618bc46c1e2d1cc7d4
+clamav_version=1.5.4
+clamav_tag=clamav-1.5.4
+clamav_source_commit=fa59fca15872bb8a914ba4c68188bcc8a502cbdf
+dockerfiles_commit=1eba87c1b014d6b5598a1ad54325edb491bd691c

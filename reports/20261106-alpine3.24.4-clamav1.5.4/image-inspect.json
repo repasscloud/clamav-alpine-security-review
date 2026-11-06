@@ -1,0 +1,77 @@
+[
+    {
+        "Id": "sha256:9a53fb3217fe76885db95238faffc821699074e8303735eb5428e9eb3482a842",
+        "RepoTags": [
+            "local/swoovr-clamav-alpine:review"
+        ],
+        "RepoDigests": [],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-11-06T12:09:45.124675156Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "3310/tcp": {},
+                "7357/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "TZ=Etc/UTC"
+            ],
+            "Cmd": null,
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "clamdcheck.sh"
+                ],
+                "StartPeriod": 360000000000
+            },
+            "Image": "",
+            "Volumes": null,
+            "WorkingDir": "/",
+            "Entrypoint": [
+                "/init"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "maintainer": "ClamAV bugs <clamav-bugs@external.cisco.com>"
+            }
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 120675399,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/fqmw958razejs4talntltpeb8/diff:/var/lib/docker/overlay2/rcjmdietfk03hmsjbgew19qcg/diff:/var/lib/docker/overlay2/q1qu9rf2u6werk8jp45m3tvkn/diff:/var/lib/docker/overlay2/enqxq2q26iz5m53q5nn37cdzb/diff:/var/lib/docker/overlay2/bf368190db3a7b377d3f05b7754734df5a76e4fdba3368649beb68e3fd545a43/diff",
+                "MergedDir": "/var/lib/docker/overlay2/wdkemuob7tsyl0bfjegguon97/merged",
+                "UpperDir": "/var/lib/docker/overlay2/wdkemuob7tsyl0bfjegguon97/diff",
+                "WorkDir": "/var/lib/docker/overlay2/wdkemuob7tsyl0bfjegguon97/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:75f1d9657d880da5f75298e8f40e9928bb6e260c50d26f97af196845307e3064",
+                "sha256:d5fa458569371a2fe5bafb5f7c6b9f532746acefc5d3d696f10d70a717ad74c2",
+                "sha256:d8db09ef825ddc10ff3bde8bec554170e7425e86555305267d0aaf7348d768cf",
+                "sha256:f1bc070649778a18a3353b9e30be40291e2a23fd617176e9480f83806a01d2d0",
+                "sha256:e6ed0e61a70750c8bc7e105090f13830e91e74b499cc1d8055aa5240657ee3be",
+                "sha256:03a3c09cfbba072dab64bbbe910ee7ad94bdbe4db3fb7d07dc945f8633051a96"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-11-06T12:09:46.042739728Z"
+        }
+    }
+]
