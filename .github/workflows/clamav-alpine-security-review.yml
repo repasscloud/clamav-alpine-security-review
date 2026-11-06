@@ -1,0 +1,220 @@
+name: ClamAV Alpine - Build and Security Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      alpine_version:
+        description: 'Alpine version (latest, 3.24, 3.24.1, etc.)'
+        required: true
+        default: 'latest'
+        type: string
+      clamav_version:
+        description: 'ClamAV release (latest or e.g. 1.5.4)'
+        required: true
+        default: 'latest'
+        type: string
+      save_image:
+        description: 'Include the built Docker image (.tar.gz) in artifacts (large)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-review:
+    name: Build / scan Linux AMD64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      IMAGE: local/swoovr-clamav-alpine:review
+      REPORT_DIR: ${{ github.workspace }}/reports
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare report directory
+        run: mkdir -p "$REPORT_DIR"
+
+      - name: Resolve versions and fetch upstream source
+        id: versions
+        shell: bash
+        env:
+          ALPINE_INPUT: ${{ inputs.alpine_version }}
+          CLAMAV_INPUT: ${{ inputs.clamav_version }}
+        run: |
+          set -euo pipefail
+          alpine="$ALPINE_INPUT"
+          if [[ "$alpine" != latest && ! "$alpine" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo 'Alpine must be latest or a numeric version, e.g. 3.24' >&2
+            exit 1
+          fi
+          docker pull --platform linux/amd64 "alpine:${alpine}"
+          base_ref="$(docker image inspect "alpine:${alpine}" --format '{{index .RepoDigests 0}}')"
+          echo "base_ref=$base_ref" >> "$GITHUB_OUTPUT"
+
+          if [[ "$CLAMAV_INPUT" == latest ]]; then
+            release="$(curl -fsSL --retry 3 \
+              -H 'Accept: application/vnd.github+json' \
+              https://api.github.com/repos/Cisco-Talos/clamav/releases/latest \
+              | jq -er '.tag_name')"
+          else
+            if [[ ! "$CLAMAV_INPUT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo 'ClamAV must be latest or a numeric release, e.g. 1.5.4' >&2
+              exit 1
+            fi
+            release="clamav-${CLAMAV_INPUT}"
+          fi
+          version="${release#clamav-}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected ClamAV release tag: $release" >&2
+            exit 1
+          fi
+          series="${version%.*}"
+
+          git clone --depth 1 --branch "$release" \
+            https://github.com/Cisco-Talos/clamav.git upstream-clamav
+          git clone --depth 1 \
+            https://github.com/Cisco-Talos/clamav-docker.git upstream-docker
+          dockerfile="upstream-docker/clamav/${series}/alpine/Dockerfile"
+          scripts="upstream-docker/clamav/${series}/alpine/scripts"
+          test -f "$dockerfile" || { echo "Missing upstream Dockerfile: $dockerfile" >&2; exit 1; }
+          test -d "$scripts" || { echo "Missing upstream scripts: $scripts" >&2; exit 1; }
+
+          cp "$dockerfile" upstream-clamav/Dockerfile
+          cp -a "$scripts" upstream-clamav/scripts
+          cp "$dockerfile" "$REPORT_DIR/upstream-Dockerfile"
+          git -C upstream-clamav rev-parse HEAD > "$REPORT_DIR/clamav-source-commit.txt"
+          git -C upstream-docker rev-parse HEAD > "$REPORT_DIR/dockerfiles-commit.txt"
+          {
+            echo "alpine_requested=${alpine}"
+            echo "alpine_resolved=${base_ref}"
+            echo "clamav_version=${version}"
+            echo "clamav_tag=${release}"
+            echo "clamav_source_commit=$(cat "$REPORT_DIR/clamav-source-commit.txt")"
+            echo "dockerfiles_commit=$(cat "$REPORT_DIR/dockerfiles-commit.txt")"
+          } | tee "$REPORT_DIR/build-metadata.txt"
+
+      - name: Build upstream ClamAV from source on Alpine
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --platform linux/amd64 \
+            --pull \
+            --build-arg "BASE_IMAGE=${{ steps.versions.outputs.base_ref }}" \
+            --tag "$IMAGE" \
+            --progress plain \
+            upstream-clamav 2>&1 | tee "$REPORT_DIR/build.log"
+
+      - name: Verify built container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect "$IMAGE" > "$REPORT_DIR/image-inspect.json"
+          docker run --rm --platform linux/amd64 \
+            --entrypoint /bin/sh "$IMAGE" -c \
+            'cat /etc/os-release; echo; uname -m; echo; clamscan --version; echo; freshclam --version' \
+            | tee "$REPORT_DIR/runtime-verification.txt"
+          docker run --rm --platform linux/amd64 \
+            --entrypoint /bin/sh "$IMAGE" -c 'test -f /etc/clamav/clamd.conf && test -f /etc/clamav/freshclam.conf'
+          docker run --rm --platform linux/amd64 \
+            --entrypoint /bin/sh "$IMAGE" -c 'apk info -vv' \
+            > "$REPORT_DIR/alpine-installed-packages.txt"
+          docker history --no-trunc "$IMAGE" > "$REPORT_DIR/image-history.txt"
+          docker image inspect "$IMAGE" --format '{{.Id}}' > "$REPORT_DIR/image-id.txt"
+
+      - name: Trivy vulnerability report (JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: local/swoovr-clamav-alpine:review
+          scanners: vuln
+          format: json
+          output: reports/trivy-vulnerabilities.json
+          exit-code: '0'
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Trivy vulnerability report (text)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: local/swoovr-clamav-alpine:review
+          scanners: vuln
+          format: table
+          output: reports/trivy-vulnerabilities.txt
+          exit-code: '0'
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Trivy vulnerability report (SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: local/swoovr-clamav-alpine:review
+          scanners: vuln
+          format: sarif
+          output: reports/trivy-vulnerabilities.sarif
+          exit-code: '0'
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: local/swoovr-clamav-alpine:review
+          format: cyclonedx
+          output: reports/sbom.cyclonedx.json
+          exit-code: '0'
+
+      - name: Trivy licence inventory (JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: local/swoovr-clamav-alpine:review
+          scanners: license
+          format: json
+          output: reports/trivy-licences.json
+          exit-code: '0'
+
+      - name: Summarise vulnerability findings
+        if: always()
+        shell: bash
+        run: |
+          if [[ -s "$REPORT_DIR/trivy-vulnerabilities.json" ]]; then
+            jq -r '
+              [.Results[]?.Vulnerabilities[]?] as $v |
+              "Total: \($v|length)\n" +
+              (["CRITICAL","HIGH","MEDIUM","LOW","UNKNOWN"] |
+                map(. as $s | "\($s): \([$v[] | select(.Severity == $s)]|length)") | join("\n"))
+            ' "$REPORT_DIR/trivy-vulnerabilities.json" \
+              | tee "$REPORT_DIR/vulnerability-summary.txt"
+            {
+              echo '## ClamAV Alpine vulnerability summary'
+              echo '```text'
+              cat "$REPORT_DIR/build-metadata.txt" 2>/dev/null || true
+              cat "$REPORT_DIR/vulnerability-summary.txt"
+              echo '```'
+              echo 'Reports are available under **Actions → this run → Artifacts**.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Save image archive (optional)
+        if: ${{ success() && inputs.save_image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker save "$IMAGE" | gzip -1 > "$REPORT_DIR/swoovr-clamav-alpine-linux-amd64.tar.gz"
+          sha256sum "$REPORT_DIR/swoovr-clamav-alpine-linux-amd64.tar.gz" \
+            > "$REPORT_DIR/image-archive.sha256"
+
+      - name: Upload reports and optional image archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clamav-alpine-amd64-review-${{ github.run_number }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 0
